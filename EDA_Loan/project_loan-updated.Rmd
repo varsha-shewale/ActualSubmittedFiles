@@ -1,0 +1,1096 @@
+Assessing profiles of various loan borrowers by Varsha Shewale
+========================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using in your analysis in this code
+# chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk. This
+# prevents the code from displaying in the knitted HTML output. You should set
+# echo=FALSE for all code chunks in your file, unless it makes sense for your
+# report to show the code that generated a particular plot.
+
+# The other parameters for "message" and "warning" should also be set to FALSE
+# for other code chunks once you have verified that each plot comes out as you
+# want it to. This will clean up the flow of your report.
+
+library(ggplot2)
+library(reshape2)
+library(dplyr)
+library(GGally)
+library(Hmisc)
+library(corrplot)
+library(PerformanceAnalytics)
+library(psych)
+library(memisc)
+library(ordinal) 
+library(MASS)
+library(nnet)
+
+```
+
+```{r echo=FALSE, warning=FALSE,Load_the_Data}
+# Load the Data
+path <- 
+  paste("/Users/varsha/Documents/Udacity_DAND_t1t2/Term2/ProjectSubmissions",
+             "/P2_R_EDA/prosperLoanData.csv",sep ="")
+loan_whole<-read.csv(path)
+
+```
+
+The original dataset has about 81 variables. Out of these I am analyzing only 
+the below mentioned 12(now 13) variables which I am more interested in viz.
+"ListingNumber","Term","LoanStatus",      "Occupation","EmploymentStatus","CreditScoreRangeLower","CreditScoreRangeUpper",
+"DelinquenciesLast7Years","StatedMonthlyIncome","DebtToIncomeRatio",
+"IncomeRange","LoanOriginalAmount","ListingCategory"
+
+```{r echo=FALSE, warning=FALSE, Subset_data_with_necessary_variables}
+loan<-subset(loan_whole, select = c("ListingNumber","Term","LoanStatus",      "Occupation","EmploymentStatus","CreditScoreRangeLower","CreditScoreRangeUpper",
+"DelinquenciesLast7Years","StatedMonthlyIncome","DebtToIncomeRatio",
+"IncomeRange","LoanOriginalAmount","ListingCategory..numeric."))
+
+#changing column name for ease and better readability
+names(loan)<-c("ListingNumber","Term","LoanStatus",      "Occupation","EmploymentStatus","CreditScoreRangeLower","CreditScoreRangeUpper",
+"DelinquenciesLast7Years","StatedMonthlyIncome","DebtToIncomeRatio",
+"IncomeRange","LoanOriginalAmount","ListingCategory")
+
+```
+
+Further I will be decoding the values in the ListingCategory with category names 
+Reference:
+[https://stackoverflow.com/questions/25432935/how-to-replace-values-with-table-map-in-r](replace-values-with-table-map-in-r)
+
+```{r echo=FALSE, warning=FALSE, Decoding_ListingCategory}
+#id <- sapply(0:20,function(x)toString(x))
+id<-c(0:20)
+name<-c("Not Available", "Debt Consolidation","Home Improvement", 
+"Business", "Personal Loan", "Student Use", "Auto"," Other","Baby&Adoption", 
+"Boat", "Cosmetic Procedure","Engagement Ring","Green Loans", 
+"Household Expenses","Large Purchases", "Medical/Dental","Motorcycle","RV", 
+"Taxes", "Vacation","Wedding Loans")
+
+map_listingCategory<-data.frame(id,name)
+loan$ListingCategory <- with(map_listingCategory, 
+                             name[match(loan$ListingCategory, id)])
+
+
+```
+
+The subsetted dataset has 113,937 observations of 12 variables (now 13).
+
+# Univariate Analysis
+
+Below is the summary of the loan data subset
+```{r echo=FALSE,warning=FALSE, Summary}
+summary(loan)
+```
+
+Further I wish to analyze LoanStatus.
+Looking at the LoanStatus as a percentage plot
+
+```{r echo=FALSE, warning=FALSE, Univariate_Plots}
+#Analyzing LoanStatus
+ggplot(data = loan, aes(x = LoanStatus))+
+    geom_histogram(stat=  'count',aes(y=100*(..count..)/sum(..count..)))+
+    labs(y ="Percentage")+ 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Looking at the LoanStatus using a log scale
+
+```{r echo=FALSE,warning=FALSE}
+ggplot(data = loan, aes(x = LoanStatus))+
+    geom_histogram(stat=  'count')+
+    scale_y_log10(breaks = c(0,100,250,500,1000,5000,20000,40000,60000))+
+    labs(y ="Count (log scale")+ 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Around 10% were charged-off, 5% defaulted on their loan, approx. 2% are past 
+their due payment date. 
+Around 33% have completed paying off their loan. Around 50% have 'current' 
+loan status.
+
+Let's look at the loan term.
+
+```{r echo=FALSE,warning=FALSE}
+ggplot(data = loan, aes(Term))+geom_bar(aes(y=100*(..count..)/sum(..count..)))
+```
+
+Approx. 21% borrowers have a loan term of 60 months, 
+78% borrowers have a term of 36 months; and 
+approx. 2% have a term of 12 months.
+
+Let's look at the Employment Status with percent defaulting/chargedoff.
+
+```{r echo=FALSE, warning = FALSE}
+#Analyzing Employment Status
+ggplot(data = loan, aes(EmploymentStatus))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..),
+               fill = LoanStatus %in% c('Defaulted','Chargedoff') ))+
+  labs(y="Employment Status as a Percentage(%)")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+      
+```
+
+60% of Loan borrowers are Employed, 24%(approx.) are fulltime employees,approx. 
+5% are self employed, about 1% are unemployed, approx. 5% do not have any
+employment status available( This is definitely not good as employment status is
+key in determining whether the borrower is capable of paying off his loan)
+Right now it is not clear if a specific employment category is 
+defaulting/chargedoff more than the others.
+
+Let's look at the Credit Scores.
+For Analyzing credit scores, I have created a CreditScoreMean column which is 
+average of CreditScoreRangeLower and CreditScoreRangeUpper.
+
+```{r echo=FALSE, warning = FALSE}
+#Analyzing credit score ranges
+loan$CreditScoreMean<-round(rowMeans(subset(loan, 
+      select = c(CreditScoreRangeLower, CreditScoreRangeUpper)), na.rm = TRUE))
+
+summary(loan$CreditScoreMean)
+ggplot(data = loan, aes(CreditScoreMean))+geom_histogram(binwidth = 70)+
+  scale_x_continuous(breaks = seq(0,1000,100))
+```
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan, aes(x = "", y = CreditScoreMean))+geom_boxplot()
+
+```
+
+CreditScoreMean has an IQR = 60, 50% of the borrowers have CreditScoreMean 
+between 670 and 730, maximum CreditScoreMean is 890, with minimum being at 10
+
+Let's look at the delinquencies for last 7 years.
+
+```{r echo=FALSE, warning = FALSE}
+summary(loan$DelinquenciesLast7Years)
+ggplot(data = loan, aes(DelinquenciesLast7Years))+geom_histogram(binwidth = 2)+
+  scale_x_continuous(breaks = seq(0,110,5))
+
+ggplot(data = loan, aes(DelinquenciesLast7Years))+
+  geom_histogram(binwidth = 10,alpha = 0.5)+
+  scale_y_log10(breaks = c(0,1,2,5,10,50,1000,10000,50000,80000))+
+  scale_x_continuous(breaks = seq(0,100,10))
+
+ggplot(data = loan, aes(x = "", y = DelinquenciesLast7Years))+geom_boxplot()
+```
+
+Around 80000 (70%) borrowers have zero delinquencies in the past 7 years.
+Further subsetting borrowers with one or more delinquencies.
+
+```{r echo=FALSE, warning = FALSE}
+loan.deliquent<-subset(loan,loan$DelinquenciesLast7Years>=1)
+```
+
+Approx. 32% borrowers were delinquent in the past 7 years.
+
+```{r echo=FALSE, warning = FALSE}
+#Analyzing stated monthly income
+summary(loan$StatedMonthlyIncome)
+
+```
+
+Considering income, mean income is $5608 and median income is $4667. 
+Some outliers are driving the mean higher.
+
+```{r echo=FALSE, warning = FALSE}
+
+#Using boxplot to see the distribution and outliers if any
+ggplot(data = loan, aes(x="", y=StatedMonthlyIncome))+geom_boxplot(alpha = 0.1)
+
+#Above plot squisshes the boxplot's IQR due to outliers
+ggplot(data = loan, aes(x="", y=StatedMonthlyIncome))+ 
+  geom_boxplot()+
+  coord_cartesian(ylim = c(0,10000))
+#75% of borrowers have monthly income <=$6825
+
+ggplot(aes(x=StatedMonthlyIncome), data = loan)+geom_histogram(binwidth = 1000)+
+  scale_x_continuous(limits = c(0,25000))
+
+```
+
+As anticipated the income distribution is right skewed following the 80-20 rule
+with very few people having very high incomes and vice versa.
+
+Let's look at LoanOriginalAmount.
+
+```{r echo=FALSE, warning = FALSE}
+summary(loan$LoanOriginalAmount)
+ggplot(aes(x=LoanOriginalAmount), data = loan)+
+  geom_histogram(binwidth = 5000)+
+  scale_x_continuous(breaks = seq(0,30000,5000))
+
+ggplot(aes(x ="", y=LoanOriginalAmount), data = loan)+geom_boxplot()+
+  scale_y_continuous(breaks = seq(0,30000,5000))
+```
+
+Considering the loan amounts borrowed, based on the boxplot 75% of the borrowers
+have loan amount <= $12000 and the maximum loan amount is $35000.
+
+```{r echo=FALSE, warning = FALSE}
+sum(loan$LoanOriginalAmount > 12000)
+```
+
+Out of 113,937 borrowers, 26909 (25%) have loan amount > $12000 
+
+##Summarizing findings of Univariate Analysis
+
+1. Out of 113,937 borrowers, 26909 (25%) have loan amount > 12000, median
+loan amount is equal to $6500, maximum loan amount is $35000 with minimum loan 
+amount = $1000
+2. 75% of borrowers have monthly income <=$6825 with maximum monthly income at
+$1,750,000. This caused an extremely right-skewed distribution.
+3. 60% of Loan borrowers are Employed, 24%(approx.) are fulltime employees,
+approx. 5% are self employed, about 1% are unemployed, approx. 5% don't have any
+employment status available( This is definitely not good as employment status is
+key in determining whether the borrower is capable of paying off his loan)
+4. Majority of the borrowers (approx. 78%)  have a term of 36 months 
+5. 33% completed their loan, around 10% were charged-off, 5% defaulted
+6. CreditScoreMean is a calculated column using the average of lowerCreditScore
+range and upperCreditScore range for each borrower
+CreditScoreMean has an IQR = 60, 50% of the borrowers have CreditScoreMean 
+between 670 and 730, maximum CreditScoreMean is 890, with minimum being at 10 
+(would definitely like to investigate the borrowers with lower CreditScoreMean)
+7. Approx. 32% borrowers have 1 or more delinquencies in past 7 years.
+
+Considering the above findings, I further wish to explore:
+- borrowers with low credit scores and/or unemployed.
+- profiles of people who were chargedoff and defaulted.
+- profiles of people who completed their loans.
+- if past deliquencies have any effect on today's loan status.
+
+#Bivariate Analysis (part 1)
+
+NOTE: 
+BASED ON SUBSETS DRAWN IN FURTHER ANALYSIS, SOMETIMES I FELT THE NEED TO
+CONDUCT UNIVARIATE ANALYSIS TO LOOK AT THE DISTRIBUTION OF A KEY VARIABLE WITHIN  
+THE SUBSET ALONE.
+
+Let's analyze creditScoreMean vs. loan Amount
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan, aes(x = CreditScoreMean, y = LoanOriginalAmount))+
+  geom_point()
+```
+
+Loan Amount vs. CreditScoreMean yeilds a left skewed distribution. We can see 
+that with an increase in the creditScoreMean borrowers are able to avail
+higher amount loans as expected. The surprising aspect of the plot is loans 
+lent to borrowers with low credit scores (almost close to 10).
+
+Let's find the coefficient of corelation between Loan Amount and CreditScoreMean
+
+```{r echo=FALSE, warning = FALSE}
+cor(loan$CreditScoreMean, loan$LoanOriginalAmount,use = 'complete.obs') 
+```
+
+The correlation coefficient is 0.3408, which means the relation is positive and 
+meaningful but not very strong.
+
+Lets analyze these low credit score borrowers.
+
+```{r echo=FALSE, warning = FALSE}
+loan.low_credit <-subset(loan,loan$CreditScoreMean <=10)
+#Borrowers with credit score mean <= 10 are 133. Now lets see their loan status
+ggplot(data = loan.low_credit,aes(x = LoanStatus))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))
+```
+
+Out of the 133 low credit score borrowers, approx.
+- 29% completed their loan,
+- 26% were chargedoff,
+- 44% defaulted
+
+Let's create same plot for high credit score borrowers
+
+```{r echo=FALSE, warning = FALSE}
+loan.high_credit <-subset(loan,loan$CreditScoreMean > 10)
+#Borrowers with credit score mean > 10 are 133. Now lets see their loan status
+ggplot(data = loan.high_credit,aes(x = LoanStatus))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  
+```
+
+Out of 113213 high credit score borrowers, 
+- 33% completed their loans,
+- 10% were chargedoff,
+- 4% defaulted,
+
+Clearly low credit score is a key attribute in determining future loan payment 
+status as the percentage of defaulters/chargedoff is much higher with low credit
+score borrowers.
+
+Let's subset the low credit score borrowers to keep only defaulted and 
+chargedoff cases.
+
+```{r echo=FALSE, warning = FALSE}
+loan.low_credit_defChar<-subset(loan.low_credit,loan.low_credit$LoanStatus %in% 
+                             c("Chargedoff","Defaulted"))
+```
+Lets explore their occupation and employment status.
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan.low_credit_defChar,aes(x = EmploymentStatus))+
+  geom_bar()
+
+#**************
+
+```
+
+Out of the 133 lower credit score cases,where 94 are defaulting or chargedoff 
+cases, no data is available regarding their EmploymentStatus. It is either
+stated as 'Not available' or is missing.
+Let's check their occupation.
+
+```{r echo=FALSE, warning = FALSE}
+unique(loan.low_credit_defChar$Occupation)
+ggplot(data = loan.low_credit_defChar, aes(x = Occupation))+
+  geom_bar(stat = "count")+coord_flip()
+```
+
+The defaulters/chargeoff borrowers with lower credit score mean seem to have
+myriad occupations.
+Lets explore their monthly income
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan.low_credit_defChar, aes(StatedMonthlyIncome))+
+  geom_histogram()
+
+summary(loan.low_credit_defChar$StatedMonthlyIncome)
+ggplot(data = loan.low_credit_defChar,aes(x = "",y = StatedMonthlyIncome))+
+  geom_boxplot()+coord_cartesian(ylim=c(0,10000))
+```
+
+IQR indicates 50% of low credit defaulters/chargedoff have income in range $1200
+to $2800 approx.
+It is surprising to see someone with monthly income of $33330 with credit score
+mean <= 10 and being in the defaulting/chargedoff category.
+
+```{r echo=FALSE, warning = FALSE}
+a<-subset(loan,StatedMonthlyIncome >=30000 & CreditScoreMean <=10 )
+```
+
+The above borrower had taken a loan =$3600 for 36 months term and he defaulted 
+on his loan. There is no other data available for this specific defaulter.
+
+Moving on to our other borrowers in the above subset "loan.low_credit_defChar"
+and comparing them to the rest of the borrowers.
+
+```{r echo=FALSE, warning = FALSE}
+loan.low_credit_non_defChar<-subset(loan.low_credit,
+                         !(LoanStatus %in% c("Defaulted","Chargedoff")) )
+```
+
+```{r echo=FALSE, warning = FALSE}
+summary(loan.low_credit_non_defChar$StatedMonthlyIncome)
+ggplot(data = loan.low_credit_non_defChar,aes(x = "",y = StatedMonthlyIncome))+
+  geom_boxplot()
+```
+
+Lets do a side by side comparison of Incomes between low credit 
+defaulters/Chargedoff and other low credit borrowers
+
+```{r echo=FALSE, warning = FALSE}
+temp_df <- merge(loan.low_credit_non_defChar$StatedMonthlyIncome,
+                  loan.low_credit_defChar$StatedMonthlyIncome) 
+names(temp_df)<-c("lc_non_dc","lc_dc")
+t<-melt(temp_df)
+
+ggplot(data = t, aes(x=variable, y= value))+geom_boxplot()+
+  coord_cartesian(ylim = c(0,10000))
+```
+
+As seen from the side by side boxplots, the income distribution between low 
+credit defaulters/chargedoff and low credit others is NOT much different. 
+Infact the numbers seen in summary stats for low credit non defaulters non 
+chargedoff are lower looking at the IQR and mean!
+
+#Bivariate Analysis (part 2)
+
+Now let's explore relation between creditScoreMean and deliquencies
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan, aes(y = CreditScoreMean,x=DelinquenciesLast7Years))+
+  geom_point(alpha = 0.7)
+
+```
+
+The graph of the CreditScore Vs. Deliquencies does not show a straight-forward
+relation. I was hoping to see a negative corelation as higher number of 
+deliquencies should adversely affect the credit mean but even with as high as 
+100 deliquencies the credit score mean is in 500-750 range approx.
+
+Let's explore StatedMonthlyIncome vs. deliquencies
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan, aes(y = StatedMonthlyIncome,x=DelinquenciesLast7Years))+
+  geom_point(alpha = 0.3)+
+  scale_y_log10(breaks = c(0,1000,2000,3000,4000,5000,6000,7000,10000))+
+  coord_cartesian(ylim = c(1000,10000))
+
+
+ggplot(data = loan, aes(y = StatedMonthlyIncome,x=DelinquenciesLast7Years))+
+  geom_point(alpha = 0.3)+
+  coord_cartesian(ylim = c(1000,10000))
+
+```
+
+This graph is also same as above, with no straight-forward relation between 
+income and deliquencies. Borrowers with small as well as large incomes have
+varying numbers of deliquencies.
+
+Now let's look into delinquencies vs. debt-to-income ratio
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan, aes(y = DebtToIncomeRatio,x=DelinquenciesLast7Years))+
+  geom_point(alpha = 0.7)+
+  scale_y_continuous(breaks = c(0,10,0.5))
+```
+
+In general there is negative corelation here, the lower the Debt-to-Income ratio
+the higher are the deliquencies.
+The number of past deliquencies seen is very high with debt-to-income ratio of 
+around 0.5
+The correlation coefficient is:
+```{r echo=FALSE, warning = FALSE}
+cor(loan$DelinquenciesLast7Years,loan$DebtToIncomeRatio, use = 'complete.obs')
+```
+-0.04387671.
+So the correlation is negative but not meaningful as it's absolute value < 0.3.
+
+Let's see if there is any correlation between loan amount and past deliquencies.
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan, aes(y = LoanOriginalAmount,x=DelinquenciesLast7Years))+
+  geom_point(alpha = 0.7)
+```
+
+In general there is a negative corelation between loan amount and delinquencies.
+Borrowers with large number of past delinquencies have taken smaller loan 
+amounts.
+
+The correlation coefficient is:
+```{r echo=FALSE, warning = FALSE}
+cor(loan$DelinquenciesLast7Years,loan$LoanOriginalAmount, use = 'complete.obs')
+```
+-0.1366667.
+So the correlation is negative but not meaningful as it's absolute value < 0.3
+
+#Part Bivariate Analysis (part 3)
+
+Let's see if past delinquencies show any impact on CreditScoresMean.
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(loan, aes(y = CreditScoreMean,x = DelinquenciesLast7Years))+
+  geom_point()+
+  scale_y_continuous(breaks = seq(0,900,100))
+
+```
+
+Let's explore past delinquencies versus loan status.
+
+```{r echo=FALSE, warning = FALSE}
+
+ggplot(loan, aes(y = LoanStatus,x = DelinquenciesLast7Years))+geom_point()
+
+```
+
+Looking at the past delinquencies its difficult to predict future loan's payment 
+status.
+I was hoping to see fewer past deliquencies for Loan Status = 'Completed'.
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(loan.deliquent, aes(x= LoanStatus))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  scale_y_continuous(breaks = seq(0,60,10))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Among borrowers with past delinquencies, 
+-around 14% were chargedoff,
+-around 5% defaulted,
+-around 33% completed their loan.
+
+Lets try to see same plot for borrowers with zero past deliquencies
+
+```{r echo=FALSE, warning = FALSE}
+loan.nondelinquent<-subset(loan,loan$DelinquenciesLast7Years <= 0)
+
+ggplot(loan.nondelinquent, aes(x= LoanStatus))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  scale_y_continuous(breaks = seq(0,60,10))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+67% of borrowers have zero past delinquencies (for last 7 yrs).
+
+Among borrowers with zero past delinquencies, 
+-around 9% were chargedoff,
+-around 4% defaulted,
+-around 33% completed their loan.
+
+Comparing borrowers with past deliquencies vs those with zero deliquencies, we 
+see that ones with past delinquencies have higher percentages of chargedoff/
+defaulting loans.
+
+#Bivariate Analysis (part 4)
+
+Now let's look at people who availed loan and are unemployed.
+
+```{r echo=FALSE, warning = FALSE}
+#Analyzing Employment Status and Loan Status
+ggplot(data = loan, aes(EmploymentStatus))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..),
+               fill = LoanStatus %in% c('Defaulted','Chargedoff') ))+
+  labs(y="Employment Status as a Percentage(%)")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+Borrowers with all types of 'Employment Status' had either defaulted/chargedoff.
+Want to see the profile of the unemployed borrowers 
+
+```{r echo=FALSE, warning = FALSE}
+loan.unemp <- subset(loan, EmploymentStatus == 'Not employed')
+str(loan.unemp) #returns 835 borrowers (not employed)
+```
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(loan.unemp,aes(x=LoanStatus))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+Among the unemployed borrowers, 
+ 23% are chargedoff loans,
+ 3% are defaulting loans,
+ 41% are completed loans
+
+Let's compare above with employed borrowers (Employed, full-time, Other,
+part-time, self employed)
+
+```{r echo=FALSE, warning = FALSE}
+loan.emp<-subset(loan, loan$EmploymentStatus %in% 
+            c("Employed","Full-time","Other","Part-time","Self-employed"))
+
+ggplot(loan.emp,aes(x=LoanStatus))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+```
+
+Around 92% are employed borrowers based on our definition of 'employed' as given
+in the vector above.
+Among the employed borrowers, 
+- 10% are chargedoff loans, 
+- 3% are defaulting loans,
+- 31% are completed loans
+
+Comparing employed and unemployed borrowers, the percentage of loans getting 
+chargedoff is very high with unemployed borrowers.
+
+Lets look at occupations of unemployed borrowers.
+
+```{r echo=FALSE, warning = FALSE}
+unique(loan.unemp$Occupation) # returns all possible occupations.
+#Lets see if any specific occupation is higher than the rest
+
+ggplot(data = loan.unemp, aes( x=Occupation))+geom_bar()+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Approx. 800 of 835 unemployed have listed 'other' as their occupation while
+the majority of the remaining appear to be students.
+This finding was something unexpected for me as I was anticipating the 
+unemployed borrowers to be mostly students.
+Below I am recreating above plot excluding 'Other' occupation.
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = subset(loan.unemp, Occupation != 'Other'), aes( x=Occupation))+geom_bar()+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+Lets analyze the loan amounts that were taken by the unemployed borrowers
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(aes(y = LoanOriginalAmount, x =""), data = loan.unemp) +
+  geom_boxplot()
+
+summary(loan.unemp$LoanOriginalAmount) 
+
+```
+
+50% of unemployed borrowers availed loan amounts between $2500 and $6000. 
+Median being $4000 and maximum being $25000. 
+
+Digressing a bit to see how much loan do students borrow in general.
+
+```{r echo=FALSE, warning = FALSE}
+loan.student<- loan[grep("Student", loan$Occupation), ]
+```
+
+Out of 113937 borrowers, 699 are students. Checking their employment status
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan.student, aes(x = EmploymentStatus))+ geom_bar()
+
+ggplot(data = loan.student, aes(x = EmploymentStatus))+ 
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  ylab("Employment % of students in each category")
+
+```
+
+It was fascinating to find only about 3% students unemployed. Rest were either 
+working part-time, full-time, self-employed, etc.
+
+Lets look at the loan amount borrowed by students along with loan status
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan.student, aes(x = LoanOriginalAmount))+ 
+  geom_histogram(binwidth = 2000)
+
+ggplot(data = loan.student, aes(x ="",y = LoanOriginalAmount))+ 
+  geom_boxplot()
+
+summary(loan.student$LoanOriginalAmount)
+```
+
+Its a right skewed distribution. 50% of students borrowed loan between $2000 and
+$5000, with maximum loan at $20000.
+I am wondering if all these loans were for education or were personal, etc.
+Need to see if the whole dataset had a Loan_type variable.
+The dataset actually has a variable 'ListingCategory' which mentions type of 
+loan. Adding this variable to our dataframe by changing code in the beginning.
+Decoding the values in the ListingCategory with category names. Reference:
+https://stackoverflow.com/questions/25432935/how-to-replace-values-with-table-
+map-in-r
+And then viewing the barchart for ListingCategory
+
+```{r echo=FALSE, warning = FALSE}
+#basic bar chart of ListingCategory
+
+ggplot(data = loan,aes(x = ListingCategory))+
+  geom_bar()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#percentage bar plot
+ggplot(data = loan,aes(x = ListingCategory))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+It is interesting to see that around 51% borrowers have borrowed money to pay 
+off their other loans (based on ListingCategory : Debt Consolidation)
+This makes me want to digress a bit more and analyze these individuals more
+in terms of LoanStatus
+
+```{r echo=FALSE, warning = FALSE}
+loan.debtConsolidate<-loan[loan$ListingCategory == 'Debt Consolidation',]
+
+#barchart for loanStatus
+ggplot(data = loan.debtConsolidate,aes(x = LoanStatus))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Based on the above barchart, approx. 22% of debt consolidators have completed
+their loan, 6% chargedoff, 2% defaulted, whereas about 67% have status listed as
+'current' which makes me think if all Debt Consolidation related loans are 
+pretty recent compared to other loans.
+
+Moving my focus back to students...
+Redrawing the ListingCategory barchart
+
+```{r echo=FALSE, warning = FALSE}
+#percentage bar plot
+ggplot(data = loan,aes(x = ListingCategory))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(data = loan,aes(x = ListingCategory))+
+  geom_bar()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Based on the barchart around 1% (approx. 1000) of total borrowers have taken 
+loan for student_use.
+Now creating similar barchart just for subsetted student dataframe
+
+```{r echo=FALSE, warning = FALSE}
+
+ggplot(data = loan.student,aes(x = ListingCategory))+
+  geom_bar()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(data = loan.student,aes(x = ListingCategory))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+So out of approx. 1140 borrowers with occupation listed as students less than 
+100 have ListingCategory as 'student_use'. Approx. 130 (18%) have listed 'Debt 
+Consolidation' and for 270 students the data is unavailable.
+It is surprising to see almost 18% students taking loans for paying off their 
+old loans.
+
+Moving back to unemployed borrowers... 
+Filtering unemployed borrowers with low credit scores.
+
+```{r echo=FALSE, warning = FALSE}
+
+loan.unemp_lowCredit<-
+  loan %>%
+  filter(EmploymentStatus == "Not employed" & CreditScoreMean <11) 
+```
+
+The above result set is empty so none of the unemployed borrowers had low credit
+scores.
+
+Lets analyze the type of loan (ListingCategory) taken by unemployed folks
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan.unemp, aes(x=ListingCategory))+
+  geom_bar()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(data = loan.unemp, aes(x=ListingCategory))+
+  geom_bar(aes(y=100*(..count..)/sum(..count..)))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Based on the above graph appox. 33% (270) of the total unemployed (835) have 
+'Debt Consolidation' as their ListingCategory.
+
+18% have specified 'other',12% have not provided this info, 11% have listed 
+'Business', 7% have listed 'household expenses' and all other Listing categories
+are below 5% each.
+
+```{r echo=FALSE, warning = FALSE}
+#including only numrecic columns for correlation matrix
+loan.num_df <- subset(loan, 
+                      select = c('Term','DelinquenciesLast7Years',
+                                    'StatedMonthlyIncome','DebtToIncomeRatio',
+                                    'LoanOriginalAmount','CreditScoreMean'))
+
+loan.corrp_mat <- rcorr(as.matrix(loan.num_df))
+loan.corr_mat<- cor(loan.num_df, method = "pearson", use = "complete.obs")
+
+```
+
+Taking help from 
+http://www.sthda.com/english/wiki/correlation-matrix-a-quick-start-guide-to-
+analyze-format-and-visualize-a-correlation-matrix-using-r-software
+and http://jamesmarquezportfolio.com/correlation_matrices_in_r.html to visualize
+the correlation matrix.
+
+```{r echo=FALSE, warning = FALSE}
+#psych package
+pairs.panels(loan.num_df, scale=TRUE)
+
+
+#corrplot package
+corrplot(loan.corrp_mat$r, type="upper", order="hclust", tl.col = "black",
+         p.mat = loan.corrp_mat$P, sig.level = 0.01, insig = "blank")
+
+```
+
+The above plot displays positive correlation in blue and negative correlations 
+in red. The size of the circle displays the strength of the relation and the
+blank cells indicate insignificant relations. The significance level used is 
+0.01
+The only meaningful relations are between loan original amount and 
+creditScoreMean; and loan original amount and term.
+
+##Summarizing findings of Bivariate Analysis
+Loan Amount vs. CreditScoreMean yeilds a left skewed distribution. 
+With an increase in the creditScoreMean borrowers are able to avail
+higher amount loans as expected. The surprising aspect of the plot is loans 
+lent to borrowers with low credit scores (almost close to 10).
+
+The correlation coefficient is 0.3408, which means the relation is positive and meaningful but not very strong.
+
+Percentage of defaulters/chargedoff is much higher with low credit
+score borrowers.
+
+The lower the Debt-to-Income ratio, the higher are the delinquencies 
+(coef = - 0.04387671). So the correlation is negative but not meaningful as it's absolute value < 0.3.
+
+Borrowers with large number of past delinquencies have taken smaller loan 
+amounts. (coeff = -0.1366667.)
+So the correlation is negative between loan amount and delinquencies but not meaningful as it's absolute value < 0.3
+
+Borrowers with one or more past deliquencies have higher percentages of 
+chargedoff/defaulting loans vs zero deliquencies.
+
+Comparing employed and unemployed borrowers, the percentage of loans getting 
+chargedoff is very high with unemployed borrowers.
+
+50% of unemployed borrowers availed loan amounts between $2500 and $6000. 
+Median being $4000 and maximum being $25000. 
+
+Out of 113937 borrowers, 699 are students. It was fascinating to find only about 3% students unemployed. Rest were either 
+working part-time, full-time, self-employed, etc.
+
+It is interesting to see that around 51% borrowers have borrowed money to pay 
+off their other loans (based on ListingCategory : Debt Consolidation)
+ 
+Based on their LoanStatus approx. 22% of debt consolidators have completed
+their loan, 6% chargedoff, 2% defaulted, whereas about 67% have status listed as
+'current' which makes me think if all Debt Consolidation related loans are 
+pretty recent compared to other loans.
+
+None of the unemployed borrowers had low credit scores.
+
+Based on the above graph appox. 33% (270) of the total unemployed (835) have 
+'Debt Consolidation' as their ListingCategory.
+18% have specified 'other',12% have not provided this info, 11% have listed 
+'Business', 7% have listed 'household expenses' and all other Listing categories
+are below 5% each.
+
+The only meaningful relations are between loan original amount and 
+creditScoreMean; and loan original amount and term.
+
+
+# Multivariate Analysis
+
+```{r echo=FALSE, warning = FALSE,Multivariate_Plots}
+ggplot(data = loan, aes(x = CreditScoreMean, y = LoanOriginalAmount))+
+  geom_point(alpha = 0.1)+
+  facet_wrap(~Term)
+```
+
+Let's see the same plots above using boxplots and removing creditScores < 10 to 
+correctly see the creditScore mean spread.
+
+
+```{r echo=FALSE, warning = FALSE}
+ggplot(data = loan.high_credit,aes(x = "",y = LoanOriginalAmount))+
+  geom_boxplot()+
+  facet_wrap(~Term)
+
+ggplot(data = loan.high_credit,aes(x = "",y = CreditScoreMean))+
+  geom_boxplot()+
+  facet_wrap(~Term)
+```
+
+We see that borrowers with higher credit scores (between 600 and 900) have terms
+of 12 months and 60 months, while lower credit borrowers have term of 36 months.
+Also with increase in term the loan amount is also increasing.
+
+Let's see if we can incorporate loan status in our above geom_point plot.
+Also I wish to focus only 3 levels of loan status viz. Completed, defaulted and
+chargedoff.
+Subsetting loan dataframe to include rows with only "Chargedoff","Completed" 
+and "Defaulted" cases. We will look at only complete cases.
+
+```{r echo=FALSE, warning = FALSE}
+loan.ls<-subset(loan,LoanStatus %in% c("Chargedoff","Completed","Defaulted"))
+loan.ls$LoanStatus<-factor(loan.ls$LoanStatus,
+                  levels=c('Completed','Defaulted','Chargedoff'),
+                  ordered=FALSE)
+
+loan.ls<-loan.ls[complete.cases(loan.ls), ] 
+loan.ls<-na.omit(loan.ls)
+
+```
+
+```{r echo=FALSE, warning = FALSE}
+
+ggplot(data = loan.ls,aes(x = CreditScoreMean,y = LoanOriginalAmount))+
+  geom_boxplot(aes(color = LoanStatus, alpha = 0.3))+
+  facet_wrap(~Term)+
+  scale_color_manual(values=c("orange", "blue", "red"))+
+  scale_x_continuous(breaks = seq(0, 1000, 200))
+
+
+```
+
+From the plot above we see that:
+Defaulting/ Charged-off loan amounts < = $25,000.
+The defaulters with 36-months term have credit scores in range 50-430.
+The chargedoff loans with 36-months term have credit scores in range 440-830. 
+Completion of loan is 100% for loan amounts > $25,000
+
+NOTE:
+PLEASE COMMENT ON THE CORRECTNESS OF THE MATHEMATICAL MODEL BELOW.
+IN THE PREVIOUS REVIEW I RECEIVED NO FEEDBACK FOR THIS SECTION.
+THANKS!!!
+
+Now let us try to predict CreditScoreMean based on these variables using a
+linear model.
+
+```{r echo=FALSE, warning = FALSE}
+m1<-lm(CreditScoreMean ~ LoanOriginalAmount, data = loan)
+m2<-update(m1, ~. + DelinquenciesLast7Years )
+m3<-update(m2, ~. + StatedMonthlyIncome )
+m4<-update(m3, ~. + Term)
+
+mtable(m1,m2,m3,m4)
+```
+
+Looking at the low R-squared values we see that the data is heavily scattered
+around the linear model described by above code with model m1 being the worst of
+all four models. Thus the above models are not good if we are looking for 
+precise CreditScore predictions.
+
+Let's see if we can predict LoanStatus based on the other variables. I will only
+try to predict if a person can complete, default or get chargedoff on his loan.
+
+Now taking help from
+https://datascienceplus.com/perform-logistic-regression-in-r/, I will
+apply the Multinom logistic regression model to predict Loan Status.
+As my outcome (LoanStatus) variable is categorical (not ordinal) and has more 
+than two levels, this model seems appropriate.
+
+```{r echo=FALSE, warning = FALSE}
+loan.ls$LoanStatus <- relevel(loan.ls$LoanStatus, ref = "Completed")
+
+```
+
+Now let us split the loan.ls dataset into training and testing subsets for 
+modeling (using 75% data) and predicting (using 25% data) .
+
+```{r echo=FALSE, warning = FALSE}
+loan.ls.train <- loan.ls[1:37400,] #approximately 75% data
+loan.ls.test <- loan.ls[37401:49979,] #approximately 25% data
+```
+
+
+```{r echo=FALSE, warning = FALSE}
+# loan.ls1<-loan.ls
+# numcols <- grep("^c\\.",names(loan.ls1))
+# loan.ls2 <- loan.ls1
+# loan.ls2[,numcols] <- scale(loan.ls2[,numcols])
+# #m1_sc <- update(m1,data=loan.ls2)
+# 
+# 
+# model.clm <- clm(LoanStatus ~ CreditScoreMean + LoanOriginalAmount +
+#             DelinquenciesLast7Years + StatedMonthlyIncome, data = loan.ls1)
+# model.clm_sc <- update(model.clm,data=loan.ls2)
+# 
+# summary(model.clm)
+# summary(model.clm_sc)
+```
+
+
+```{r echo=FALSE, warning = FALSE}
+
+m1<- multinom(LoanStatus ~ 1, data = loan.ls.train)
+m2<- update(m1, ~. + CreditScoreMean)
+m3<- update(m2, ~. + LoanOriginalAmount)
+m4<- update(m3, ~. + DelinquenciesLast7Years)
+m5<- update(m4, ~. + StatedMonthlyIncome)
+
+mtable(m1, m2, m3, m4,m5, sdigits = 3)
+
+# z <- m5$coefficients/m5$standard.errors
+# # 2-tailed z test
+# p <- (1 - pnorm(abs(z), 0, 1)) * 2
+# exp(coef(m5))
+
+```
+
+Comparing the m1, m2,m3,m4 and m5 models we see that model m5 has lowest 
+deviance and AIC.
+Now let's apply the Multinomial logistic regression m5 model to fit the training 
+data and then predict (correctly classify the loan status) the loan status using
+the test dataset 
+
+```{r echo=FALSE, warning = FALSE}
+fit.multinom <- multinom(LoanStatus ~ CreditScoreMean + LoanOriginalAmount +
+                        DelinquenciesLast7Years + StatedMonthlyIncome,
+                        data = loan.ls.train)
+ 
+
+```
+
+```{r echo=FALSE, warning = FALSE}
+
+pred.multinom <- predict(fit.multinom,newdata=loan.ls.test,type='class')
+pred<-as.vector(pred.multinom)
+original<-as.vector(loan.ls.test$LoanStatus)
+
+t<-ifelse(pred==original,1,0)
+
+accuracy = sum(t>0)/length(t)
+```
+The calculated accuracy for correct classification of Loan Status for the model
+created is 69.401%. As the Loan Status has 3 levels, the minimum accuracy
+expected is 33.33%. Thus an accuracy of 69.4% is pretty decent.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, warning = FALSE, Plot_One}
+ggplot(data = loan, aes(x = CreditScoreMean, y = LoanOriginalAmount))+
+  geom_point(alpha = 0.1)+ggtitle("Loan Amount vs. Credit Score")
+```
+
+### Loan Amount Vs. Credit Score (Mean)
+This plot gives us a good idea of how the loan amounts vary based on Credit 
+Scores. The higher credit scores are availing higher loan amounts, but some 
+borrowers with almost 10 credit score were also able to avail loans; may be they
+had not built a credit history yet as they may be immigrants new to the country, 
+or never used credit card before, etc.
+
+
+### Plot Two
+```{r echo=FALSE, warning = FALSE,Plot_Two}
+ggplot(data = loan.ls, aes(x = LoanStatus, y = LoanOriginalAmount))+
+  geom_boxplot()+
+  ggtitle("Loan Amount vs. Loan Status")
+
+```
+
+### Loan Original Amount vs. Loan Status
+In general we see higher completion rate for higher loan amounts, the defaulting
+loans as well as Chargedoff loans are not more than $25000.
+
+### Plot Three
+```{r echo=FALSE,warning = FALSE, Plot_Three}
+ggplot(data = loan.ls,aes(x = CreditScoreMean,y = LoanOriginalAmount))+
+  geom_point(aes(color = LoanStatus, alpha = 0.3))+
+  facet_wrap(~Term)+
+  scale_color_manual(values=c("orange", "blue", "red"))+
+  scale_x_continuous(breaks = seq(0, 1000, 200))
+
+
+```
+
+### Loan Amount Vs. Credit Score (Mean) facetted by Term, colored by LoanStatus
+This plot brings all the key findings together. 
+For 12 months term the variability is the lowest for credit score means and 
+LoanAmounts too. The defaulting and chargedoff loans are least for 12 months 
+term.
+
+For 36 months term the borrowers with chargedoff loans are surprisingly in the 
+higher credit score bracket 450-850 approx. The credit score variability is 
+highest for 36 months term.
+
+For 60 months term the spread is highest for Loan Amounts, while credit scores 
+lie between 600 and 850.
+
+
+------
+
+# Reflection
+I went through a bit of struggle when trying to predict categorical variable
+'LoanStatus' using quantitative independent variables.
+
+During all my exploration I got very few meaningful and zero strong relations 
+between the variables chosen. This was surprising for me since I chose these
+variables thinking that they are the key factors that can determine loan payment
+status for a borrower.
+
+I believe going forward I would like to explore a few other variables to see if 
+they are better predictors of loan payment status.
