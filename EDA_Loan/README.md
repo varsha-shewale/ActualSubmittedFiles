@@ -7,7 +7,7 @@ In this project I have conducted Exploratory Data Analysis for the Loan dataset 
 
 ###Installation
 
-Use (this github)[https://github.com/varsha-shewale/Projects-Final/tree/master/EDA_Loan] repo to access the data and the R code written by me.
+Use [this github](https://github.com/varsha-shewale/Projects-Final/tree/master/EDA_Loan) repo to access the data and the R code written by me.
 
 ###Changes To-be-done
 
