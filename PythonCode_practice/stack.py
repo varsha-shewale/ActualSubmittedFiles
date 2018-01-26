@@ -25,24 +25,58 @@ class LinkedList(object):
             self.head = new_element
 
     def insert_first(self, new_element):
+        #insert_first is efficient than append bcoz
+        # in append one has to go through the whole LL to append at end.
+
         "Insert new element as the head of the LinkedList"
-        pass
+        #store current self.head
+        current = self.head
+
+        #assign self.head to new_elment
+        self.head = new_element
+
+        #assign stored self.head to new_element's next
+        new_element.next = current
+        return None
 
     def delete_first(self):
         "Delete the first (head) element in the LinkedList as return it"
-        pass
+        if self.head:
+            #get current first element
+            current = self.head
+
+            #get current's next
+            new_head = current.next
+
+            #assign current's next to self.head (i.e. 2nd element now becomes head of LL)
+            self.head = new_head
+
+            #clear current first element's 'next' reference address
+            #print current.value
+
+            current.next = None
+            #print current.value
+            #print current.next
+            return current
+        else:
+            #print 'Stack is empty, no element to delete!'
+            return None
 
 class Stack(object):
     def __init__(self,top=None):
-        self.ll = LinkedList(top)
+        try:
+            self.ll = LinkedList(top)
+        except:
+            print 'Linked list creation failed'
 
     def push(self, new_element):
         "Push (add) a new element onto the top of the stack"
-        pass
+        return self.ll.insert_first(new_element)
+
 
     def pop(self):
         "Pop (remove) the first element off the top of the stack and return it"
-        pass
+        return self.ll.delete_first()
 
 # Test cases
 # Set up some Elements
