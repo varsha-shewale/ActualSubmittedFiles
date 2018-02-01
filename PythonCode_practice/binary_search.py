@@ -28,6 +28,7 @@ def recur_bsearch(arr,st, end, val):
             end = l
         elif mid < val:
             st = l+1
+
     if index is None:
         index = recur_bsearch(arr,st,end,val)
 
