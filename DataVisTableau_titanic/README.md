@@ -1,7 +1,6 @@
-#README
+README
 
-##Titanic dataset analysis
-Titanic Data explained using Tableau
+Titanic dataset analysis and visualizations using Tableau
 
 ###Summary
 In the Titanic story created, I have explained the various factors that most likely led to an individual’s survival in the titanic tragedy.
